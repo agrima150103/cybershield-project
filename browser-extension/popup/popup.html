@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 360px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #060b14;
+      color: #f0f4f8;
+    }
+    .header {
+      padding: 20px;
+      background: linear-gradient(135deg, rgba(56,189,248,0.1), rgba(129,140,248,0.1));
+      border-bottom: 1px solid rgba(56,189,248,0.1);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .title { font-size: 1rem; font-weight: 700; }
+    .subtitle { font-size: 0.7rem; color: #556780; margin-top: 2px; }
+
+    .section { padding: 16px 20px; }
+    .section-title { font-size: 0.65rem; font-weight: 700; color: #556780; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px; }
+
+    .login-form { display: flex; flex-direction: column; gap: 10px; }
+    .login-form input {
+      padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(56,189,248,0.1);
+      background: #0e1726; color: #f0f4f8; font-size: 0.85rem; outline: none;
+      font-family: inherit;
+    }
+    .login-form input:focus { border-color: rgba(56,189,248,0.4); }
+    .btn {
+      padding: 10px; border-radius: 10px; border: none; cursor: pointer;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      color: white; font-weight: 700; font-size: 0.85rem; font-family: inherit;
+    }
+    .btn:hover { opacity: 0.9; }
+
+    .status { padding: 12px 16px; border-radius: 10px; margin-bottom: 10px; font-size: 0.8rem; }
+    .status.connected { background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.15); color: #34d399; }
+    .status.disconnected { background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.15); color: #f87171; }
+
+    .scan-input {
+      display: flex; gap: 8px; margin-bottom: 12px;
+    }
+    .scan-input input {
+      flex: 1; padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(56,189,248,0.1);
+      background: #0e1726; color: #f0f4f8; font-size: 0.8rem; outline: none; font-family: inherit;
+    }
+    .scan-btn {
+      padding: 10px 16px; border-radius: 10px; border: none; cursor: pointer;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      color: white; font-weight: 700; font-size: 0.78rem; white-space: nowrap; font-family: inherit;
+    }
+
+    .result { padding: 14px; border-radius: 12px; background: #0c1220; border: 1px solid rgba(56,189,248,0.08); }
+    .result-domain { font-size: 0.95rem; font-weight: 700; }
+    .result-score { font-size: 1.6rem; font-weight: 800; text-align: right; }
+    .result-bar { height: 5px; border-radius: 3px; background: #111a2d; margin: 10px 0; overflow: hidden; }
+    .result-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s; }
+    .result-details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .detail-item { padding: 8px 10px; border-radius: 8px; background: #111a2d; }
+    .detail-label { font-size: 0.6rem; color: #556780; text-transform: uppercase; letter-spacing: 0.05em; }
+    .detail-value { font-size: 0.8rem; font-weight: 700; margin-top: 3px; }
+
+    .logout-btn {
+      width: 100%; padding: 8px; border-radius: 8px; border: 1px solid rgba(248,113,113,0.15);
+      background: rgba(248,113,113,0.08); color: #f87171; font-size: 0.78rem;
+      font-weight: 600; cursor: pointer; font-family: inherit;
+    }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+      </svg>
+    </div>
+    <div>
+      <div class="title">CyberShield</div>
+      <div class="subtitle">Threat Intelligence Extension</div>
+    </div>
+  </div>
+
+  <!-- Login Section -->
+  <div id="login-section" class="section">
+    <div class="section-title">Sign In</div>
+    <div class="login-form">
+      <input type="email" id="email" placeholder="Email" value="admin@cybershield.io">
+      <input type="password" id="password" placeholder="Password">
+      <button class="btn" id="login-btn">Sign In</button>
+      <div id="login-error" style="color: #f87171; font-size: 0.78rem; display: none;"></div>
+    </div>
+  </div>
+
+  <!-- Main Section -->
+  <div id="main-section" class="section hidden">
+    <div id="connection-status" class="status connected">✓ Connected to CyberShield</div>
+
+    <div class="section-title">Quick Scan</div>
+    <div class="scan-input">
+      <input type="text" id="scan-url" placeholder="Enter URL to scan">
+      <button class="scan-btn" id="scan-btn">Scan</button>
+    </div>
+    <button class="scan-btn" id="scan-current" style="width: 100%; margin-bottom: 14px; background: rgba(56,189,248,0.1); color: #38bdf8; border: 1px solid rgba(56,189,248,0.15);">
+      Scan Current Page
+    </button>
+
+    <div id="result-container" class="hidden">
+      <div class="result">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <div>
+            <div id="result-domain" class="result-domain"></div>
+            <div id="result-label" style="margin-top: 4px; font-size: 0.72rem; padding: 3px 10px; border-radius: 20px; display: inline-block;"></div>
+          </div>
+          <div id="result-score" class="result-score"></div>
+        </div>
+        <div class="result-bar"><div id="result-bar-fill" class="result-bar-fill"></div></div>
+        <div class="result-details">
+          <div class="detail-item"><div class="detail-label">SSL</div><div class="detail-value" id="detail-ssl"></div></div>
+          <div class="detail-item"><div class="detail-label">IP-Based</div><div class="detail-value" id="detail-ip"></div></div>
+          <div class="detail-item"><div class="detail-label">Domain Age</div><div class="detail-value" id="detail-age"></div></div>
+          <div class="detail-item"><div class="detail-label">VirusTotal</div><div class="detail-value" id="detail-vt"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 14px;">
+      <button class="logout-btn" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

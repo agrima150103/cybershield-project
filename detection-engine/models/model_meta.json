@@ -1,0 +1,28 @@
+{
+  "feature_names": [
+    "url_length",
+    "domain_length",
+    "path_length",
+    "has_ip",
+    "has_at",
+    "double_slash",
+    "subdomain_count",
+    "has_https",
+    "suspicious_word_count",
+    "special_char_count",
+    "digit_count_domain",
+    "is_shortened",
+    "has_punycode",
+    "query_length",
+    "param_count",
+    "has_redirect_param",
+    "total_dots",
+    "total_hyphens",
+    "path_depth",
+    "has_server_script"
+  ],
+  "n_features": 20,
+  "rf_cv_accuracy": 1.0,
+  "gb_cv_accuracy": 1.0,
+  "training_samples": 10000
+}
