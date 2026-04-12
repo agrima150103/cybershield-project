@@ -7,22 +7,28 @@ build/
 __pycache__/
 *.pyc
 venv/
+.venv/
 
-# Env files
+# Env / secrets
 .env
+.env.*
+!.env.example
 
-# OS files
-.DS_Store
-Thumbs.db
+# Keys / certs
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+*.jks
 
 # Logs
 *.log
 
-# VS Code
+# OS / editor
+.DS_Store
+Thumbs.db
 .vscode/
 
-# SSL / Keys
-*.key
-*.pem
-*.crt
+# Local GoPhish runtime files
 gophish/

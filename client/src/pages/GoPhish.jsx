@@ -242,7 +242,7 @@ export default function GoPhish() {
                 No campaigns found
               </div>
               <div style={{ fontSize: '0.88rem' }}>
-                Create a phishing campaign in GoPhish (https://127.0.0.1:3333), then refresh this page.
+                Create a phishing campaign in GoPhish (http://127.0.0.1:3333), then refresh this page.
               </div>
             </div>
           )}
