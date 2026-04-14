@@ -20,7 +20,7 @@ export const scan = {
 };
 
 export const email = {
-  analyze: (headers) => api.post('/email/analyze', { headers }),
+  analyze: (raw_headers) => api.post('/email/analyze', { raw_headers }),
 };
 
 export const threats = {
@@ -36,9 +36,7 @@ export const community = {
 
 export const reports = {
   generate: async (scanData) => {
-    const response = await api.post('/reports/generate', scanData, {
-      responseType: 'blob',
-    });
+    const response = await api.post('/reports/generate', scanData, { responseType: 'blob' });
     const blob = new Blob([response.data], { type: 'application/pdf' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -61,6 +59,25 @@ export const gophish = {
   getPages: () => api.get('/gophish/pages'),
   getTemplates: () => api.get('/gophish/templates'),
   analyzeUrl: (url) => api.post('/gophish/analyze-url', { url }),
+};
+
+export const yaraScan = {
+  scan: (url) => api.post('/yara/scan', { url }),
+  getRules: () => api.get('/yara/rules'),
+};
+
+export const breach = {
+  checkPassword: (password) => api.post('/breach/check-password', { password }),
+  checkEmail: (email) => api.post('/breach/check-email', { email }),
+};
+
+export const shodan = {
+  lookup: (domain) => api.post('/shodan/lookup', { domain }),
+};
+
+export const vulnScan = {
+  full: (url) => api.post('/vuln/full', { url }),
+  headers: (url) => api.post('/vuln/headers', { url }),
 };
 
 export const admin = {

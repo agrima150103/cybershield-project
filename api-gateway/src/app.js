@@ -66,6 +66,10 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/recon', require('./routes/recon'));
 app.use('/api/gophish', require('./routes/gophish'));
+app.use('/api/yara', require('./routes/yara'));
+app.use('/api/breach', require('./routes/breach'));
+app.use('/api/shodan', require('./routes/shodan'));
+app.use('/api/vuln', require('./routes/vuln'));
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
