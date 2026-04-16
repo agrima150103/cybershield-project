@@ -1,83 +1,61 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const config = require('./config');
-const { sanitizeMiddleware } = require('./middleware/sanitize');
+const express = require("express");
+const cors = require("cors");
+const morgan = require("morgan");
+const dotenv = require("dotenv");
+dotenv.config();
+
+const authRoutes = require("./routes/auth");
+const scanRoutes = require("./routes/scan");
+const emailRoutes = require("./routes/email");
+const threatsRoutes = require("./routes/threats");
+const reportsRoutes = require("./routes/reports");
+const adminRoutes = require("./routes/admin");
+const settingsRoutes = require("./routes/settings");
+const communityRoutes = require("./routes/community");
+const reconRoutes = require("./routes/recon");
+const gophishRoutes = require("./routes/gophish");
+const pentestRoutes = require("./routes/pentest");
+const vulnRoutes = require("./routes/vuln");
+const yaraRoutes = require("./routes/yara");
+const breachRoutes = require("./routes/breach");
 
 const app = express();
+app.use(cors());
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan("dev"));
 
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false,
-}));
-
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
-
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ extended: false, limit: '1mb' }));
-app.use(sanitizeMiddleware);
-
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  message: { error: 'Too many requests, try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-}));
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  message: { error: 'Too many auth attempts, try again later.' },
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", service: "api-gateway" });
 });
 
-const scanLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000,
-  max: 10,
-  message: { error: 'Scan rate limit reached. Wait a moment.' },
-});
-
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.removeHeader('X-Powered-By');
-  next();
-});
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-app.use('/api/auth', authLimiter, require('./routes/auth'));
-app.use('/api/scan', scanLimiter, require('./routes/scan'));
-app.use('/api/email', require('./routes/email'));
-app.use('/api/threats', require('./routes/threats'));
-app.use('/api/community', require('./routes/community'));
-app.use('/api/reports', require('./routes/reports'));
-app.use('/api/admin', require('./routes/admin'));
-app.use('/api/settings', require('./routes/settings'));
-app.use('/api/recon', require('./routes/recon'));
-app.use('/api/gophish', require('./routes/gophish'));
-app.use('/api/yara', require('./routes/yara'));
-app.use('/api/breach', require('./routes/breach'));
-app.use('/api/shodan', require('./routes/shodan'));
-app.use('/api/vuln', require('./routes/vuln'));
+app.use("/api/auth", authRoutes);
+app.use("/api/scan", scanRoutes);
+app.use("/api/email", emailRoutes);
+app.use("/api/threats", threatsRoutes);
+app.use("/api/reports", reportsRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/community", communityRoutes);
+app.use("/api/recon", reconRoutes);
+app.use("/api/gophish", gophishRoutes);
+app.use("/api/pentest", pentestRoutes);
+app.use("/api/vuln", vulnRoutes);
+app.use("/api/yara", yaraRoutes);
+app.use("/api/breach", breachRoutes);
 
 app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  res.status(404).json({
+    error: "Route not found",
+    path: req.originalUrl,
+  });
 });
 
 app.use((err, req, res, next) => {
-  console.error('[Error]', err.message);
-  res.status(500).json({ error: 'Internal server error' });
+  console.error("[API ERROR]", err);
+  res.status(err.status || 500).json({
+    error: err.message || "Internal server error",
+  });
 });
 
 module.exports = app;

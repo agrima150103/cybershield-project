@@ -12,8 +12,7 @@ from app.api.recon import router as recon_router
 from app.api.gophish import router as gophish_router
 from app.api.yara_scan import router as yara_router
 from app.api.breach import router as breach_router
-from app.api.shodan import router as shodan_router
-from app.api.vuln import router as vuln_router
+from app.api.vuln_scan import router as vuln_router
 
 app = FastAPI(title="CyberShield Detection Engine", version="0.1.0")
 
@@ -36,5 +35,4 @@ app.include_router(recon_router, prefix="/api/recon")
 app.include_router(gophish_router, prefix="/api/gophish")
 app.include_router(yara_router, prefix="/api/yara")
 app.include_router(breach_router, prefix="/api/breach")
-app.include_router(shodan_router, prefix="/api/shodan")
 app.include_router(vuln_router, prefix="/api/vuln")

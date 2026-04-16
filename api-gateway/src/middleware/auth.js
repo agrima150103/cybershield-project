@@ -1,29 +1,24 @@
-const jwt = require('jsonwebtoken');
-const config = require('../config');
+const jwt = require("jsonwebtoken");
+const config = require("../config");
 
 function authenticate(req, res, next) {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'No token provided' });
-  }
-
   try {
-    const token = header.split(' ')[1];
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ error: "Unauthorized: No token provided" });
+    }
+
+    const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, config.jwtSecret);
+
     req.user = decoded;
     next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
+  } catch (error) {
+    console.error("[AUTH ERROR]", error.message);
+    return res.status(401).json({ error: "Unauthorized: Invalid token" });
   }
 }
 
-function authorize(...roles) {
-  return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
-    }
-    next();
-  };
-}
-
-module.exports = { authenticate, authorize };
+module.exports = authenticate;
+module.exports.authenticate = authenticate;

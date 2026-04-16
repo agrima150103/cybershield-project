@@ -6,16 +6,20 @@ from app.scanners.network_capture import full_network_capture
 
 router = APIRouter()
 
+
 class ScanRequest(BaseModel):
     target: str
+
 
 @router.post("/full")
 async def vuln_scan(req: ScanRequest):
     return full_vulnerability_scan(req.target)
 
+
 @router.post("/nikto")
 async def nikto(req: ScanRequest):
     return nikto_scan(req.target)
+
 
 @router.post("/capture")
 async def network_capture(req: ScanRequest):

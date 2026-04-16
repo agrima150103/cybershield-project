@@ -1,294 +1,326 @@
+import re
 import ssl
 import socket
 import requests
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from datetime import datetime
 
 
-COMMON_SENSITIVE_PATHS = [
-    "/admin",
-    "/admin/login",
-    "/login",
-    "/dashboard",
-    "/phpmyadmin",
-    "/.env",
-    "/config",
-    "/backup",
-    "/wp-admin",
-    "/server-status",
-    "/robots.txt",
-]
-
-
-def normalize_url(url: str) -> str:
-    url = url.strip()
-    if not url.startswith("http://") and not url.startswith("https://"):
-        return f"https://{url}"
-    return url
-
-
-def extract_host(url: str) -> str:
-    parsed = urlparse(normalize_url(url))
-    return (parsed.netloc or parsed.path).split(":")[0]
-
-
-def try_fetch(url: str):
+def scan_security_headers(url: str) -> list:
     try:
-        response = requests.get(
-            url,
-            timeout=8,
-            allow_redirects=True,
-            verify=False,
-            headers={"User-Agent": "CyberShield/1.0"},
-        )
-        return response, None
+        if not url.startswith('http'):
+            url = f'https://{url}'
+
+        resp = requests.get(url, timeout=8, verify=False, allow_redirects=True,
+                            headers={'User-Agent': 'CyberShield-VulnScanner/1.0'})
+        headers = {k.lower(): v for k, v in resp.headers.items()}
+
+        checks = []
+        severity_scores = {'high': 15, 'medium': 10, 'low': 5}
+
+        security_headers = {
+            'strict-transport-security': {
+                'name': 'HTTP Strict Transport Security (HSTS)',
+                'severity': 'high',
+                'description': 'Forces browsers to use HTTPS, preventing downgrade attacks',
+                'fix': 'Add: Strict-Transport-Security: max-age=31536000; includeSubDomains',
+            },
+            'content-security-policy': {
+                'name': 'Content Security Policy (CSP)',
+                'severity': 'high',
+                'description': 'Prevents XSS by controlling which resources can load',
+                'fix': "Add: Content-Security-Policy: default-src 'self'",
+            },
+            'x-content-type-options': {
+                'name': 'X-Content-Type-Options',
+                'severity': 'medium',
+                'description': 'Prevents MIME type sniffing attacks',
+                'fix': 'Add: X-Content-Type-Options: nosniff',
+            },
+            'x-frame-options': {
+                'name': 'X-Frame-Options',
+                'severity': 'medium',
+                'description': 'Prevents clickjacking by blocking iframe embedding',
+                'fix': 'Add: X-Frame-Options: DENY or SAMEORIGIN',
+            },
+            'x-xss-protection': {
+                'name': 'X-XSS-Protection',
+                'severity': 'low',
+                'description': 'Enables browser built-in XSS filter',
+                'fix': 'Add: X-XSS-Protection: 1; mode=block',
+            },
+            'referrer-policy': {
+                'name': 'Referrer-Policy',
+                'severity': 'low',
+                'description': 'Controls referrer info sent with requests',
+                'fix': 'Add: Referrer-Policy: strict-origin-when-cross-origin',
+            },
+            'permissions-policy': {
+                'name': 'Permissions-Policy',
+                'severity': 'medium',
+                'description': 'Controls which browser features the site can use',
+                'fix': 'Add: Permissions-Policy: geolocation=(), camera=()',
+            },
+        }
+
+        for key, info in security_headers.items():
+            present = key in headers
+            checks.append({
+                'header': info['name'],
+                'key': key,
+                'present': present,
+                'severity': info['severity'],
+                'description': info['description'],
+                'fix': info['fix'],
+                'value': headers.get(key),
+                'score': 0 if present else severity_scores.get(info['severity'], 5),
+            })
+
+        if 'server' in headers:
+            checks.append({
+                'header': 'Server Information Disclosure',
+                'key': 'server',
+                'present': True,
+                'severity': 'low',
+                'description': f'Server header reveals: {headers["server"]}',
+                'fix': 'Remove or obfuscate the Server header',
+                'value': headers['server'],
+                'score': 5,
+            })
+
+        if 'x-powered-by' in headers:
+            checks.append({
+                'header': 'X-Powered-By Disclosure',
+                'key': 'x-powered-by',
+                'present': True,
+                'severity': 'medium',
+                'description': f'Technology disclosed: {headers["x-powered-by"]}',
+                'fix': 'Remove X-Powered-By header',
+                'value': headers['x-powered-by'],
+                'score': 10,
+            })
+
+        return checks
     except Exception as e:
-        return None, str(e)
+        return [{'header': 'Connection Error', 'description': str(e), 'severity': 'high', 'present': False, 'score': 0}]
 
 
-def fetch_best_response(url: str):
-    normalized = normalize_url(url)
+def scan_ssl_vulnerabilities(domain: str) -> list:
+    findings = []
 
-    response, error = try_fetch(normalized)
-    if response is not None:
-        return response, normalized
+    try:
+        ctx = ssl.create_default_context()
+        with ctx.wrap_socket(socket.socket(), server_hostname=domain) as s:
+            s.settimeout(5)
+            s.connect((domain, 443))
+            cert = s.getpeercert()
+            cipher = s.cipher()
 
-    # fallback to http if https input fails
-    host = extract_host(normalized)
-    fallback = f"http://{host}"
-    response, _ = try_fetch(fallback)
-    if response is not None:
-        return response, fallback
+            if cipher:
+                cipher_name, protocol, bits = cipher
+                if bits < 128:
+                    findings.append({
+                        'name': 'Weak cipher strength',
+                        'severity': 'high',
+                        'detail': f'{cipher_name} uses only {bits}-bit encryption',
+                        'fix': 'Configure server to use 256-bit ciphers minimum',
+                    })
+                if 'RC4' in cipher_name or 'DES' in cipher_name or 'NULL' in cipher_name:
+                    findings.append({
+                        'name': 'Insecure cipher suite',
+                        'severity': 'critical',
+                        'detail': f'Using deprecated cipher: {cipher_name}',
+                        'fix': 'Disable RC4, DES, NULL ciphers; use AES-GCM',
+                    })
+                if 'TLSv1.0' in str(protocol) or 'TLSv1.1' in str(protocol) or 'SSLv3' in str(protocol):
+                    findings.append({
+                        'name': 'Outdated TLS version',
+                        'severity': 'high',
+                        'detail': f'Using {protocol} which has known vulnerabilities',
+                        'fix': 'Upgrade to TLS 1.2 or 1.3',
+                    })
 
-    return None, normalized
-
-
-def analyze_security_headers(headers: dict) -> dict:
-    required_headers = {
-        "Content-Security-Policy": {
-            "severity": "high",
-            "issue": "Missing Content-Security-Policy header",
-        },
-        "Strict-Transport-Security": {
-            "severity": "high",
-            "issue": "Missing HSTS header",
-        },
-        "X-Frame-Options": {
-            "severity": "medium",
-            "issue": "Missing X-Frame-Options header",
-        },
-        "X-Content-Type-Options": {
-            "severity": "medium",
-            "issue": "Missing X-Content-Type-Options header",
-        },
-        "Referrer-Policy": {
-            "severity": "low",
-            "issue": "Missing Referrer-Policy header",
-        },
-    }
-
-    present_headers = []
-    missing_headers = []
-    score = 0
-
-    for header, info in required_headers.items():
-        if header in headers:
-            present_headers.append({
-                "header": header,
-                "value": headers.get(header, ""),
-            })
-        else:
-            missing_headers.append({
-                "header": header,
-                "issue": info["issue"],
-                "severity": info["severity"],
-            })
-            score += {"high": 10, "medium": 6, "low": 3}[info["severity"]]
-
-    return {
-        "present_headers": present_headers,
-        "missing_headers": missing_headers,
-        "header_score": score,
-    }
-
-
-def scan_sensitive_paths(base_url: str) -> dict:
-    found = []
-    exposure_score = 0
-    checked = 0
-
-    base = base_url.rstrip("/")
-
-    for path in COMMON_SENSITIVE_PATHS:
-        checked += 1
-        try:
-            resp = requests.get(
-                f"{base}{path}",
-                timeout=4,
-                allow_redirects=False,
-                verify=False,
-                headers={"User-Agent": "CyberShield/1.0"},
-            )
-
-            if resp.status_code in [200, 401, 403]:
-                severity = "medium"
-                description = "Potentially sensitive endpoint exposed"
-
-                if path in ["/.env", "/backup", "/config", "/phpmyadmin", "/server-status"]:
-                    severity = "high"
-                    exposure_score += 8
-                else:
-                    exposure_score += 4
-
-                found.append({
-                    "path": path,
-                    "status_code": resp.status_code,
-                    "description": description,
-                    "severity": severity,
-                    "accessible": resp.status_code == 200,
+                findings.append({
+                    'name': 'SSL/TLS Configuration',
+                    'severity': 'info',
+                    'detail': f'Protocol: {protocol}, Cipher: {cipher_name}, Bits: {bits}',
+                    'fix': None,
                 })
-        except Exception:
-            continue
 
-    return {
-        "paths_checked": checked,
-        "paths_found": len(found),
-        "found": found,
-        "exposure_score": exposure_score,
-    }
+            not_after = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
+            days_left = (not_after - datetime.utcnow()).days
 
+            if days_left < 0:
+                findings.append({
+                    'name': 'Expired SSL certificate',
+                    'severity': 'critical',
+                    'detail': f'Certificate expired {abs(days_left)} days ago',
+                    'fix': 'Renew the SSL certificate immediately',
+                })
+            elif days_left < 30:
+                findings.append({
+                    'name': 'SSL certificate expiring soon',
+                    'severity': 'medium',
+                    'detail': f'Certificate expires in {days_left} days',
+                    'fix': 'Renew the SSL certificate before expiry',
+                })
 
-def analyze_ssl_tls(host: str) -> dict:
-    try:
-        context = ssl.create_default_context()
+            san = cert.get('subjectAltName', [])
+            if not san:
+                findings.append({
+                    'name': 'Missing Subject Alternative Name',
+                    'severity': 'low',
+                    'detail': 'Certificate has no SAN entries',
+                    'fix': 'Reissue certificate with proper SAN entries',
+                })
 
-        with socket.create_connection((host, 443), timeout=5) as sock:
-            with context.wrap_socket(sock, server_hostname=host) as ssock:
-                cert = ssock.getpeercert()
-                cipher = ssock.cipher()
-                tls_version = ssock.version()
-
-                not_after = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z")
-                days_until_expiry = (not_after - datetime.utcnow()).days
-
-                findings = []
-                ssl_score = 0
-
-                if days_until_expiry < 30:
-                    findings.append({"issue": "Certificate expires soon", "severity": "high"})
-                    ssl_score += 12
-                else:
-                    findings.append({"issue": "Certificate validity looks healthy", "severity": "good"})
-
-                if tls_version in ["TLSv1", "TLSv1.1"]:
-                    findings.append({"issue": f"Weak TLS version in use: {tls_version}", "severity": "high"})
-                    ssl_score += 12
-                else:
-                    findings.append({"issue": f"Modern TLS version in use: {tls_version}", "severity": "good"})
-
-                return {
-                    "has_ssl": True,
-                    "tls_version": tls_version,
-                    "cipher": cipher[0] if cipher else "Unknown",
-                    "days_until_expiry": days_until_expiry,
-                    "findings": findings,
-                    "ssl_score": ssl_score,
-                }
-
+    except ssl.SSLError as e:
+        findings.append({
+            'name': 'SSL connection failed',
+            'severity': 'critical',
+            'detail': str(e),
+            'fix': 'Fix SSL configuration on the server',
+        })
     except Exception as e:
-        return {
-            "has_ssl": False,
-            "error": str(e),
-            "ssl_score": 20,
-            "findings": [
-                {
-                    "issue": "No SSL/TLS connection available",
-                    "severity": "high",
-                }
-            ],
-        }
+        findings.append({
+            'name': 'SSL check error',
+            'severity': 'medium',
+            'detail': str(e),
+            'fix': 'Ensure port 443 is accessible and SSL is configured',
+        })
+
+    return findings
 
 
-def security_headers_scan(url: str) -> dict:
-    response, final_url = fetch_best_response(url)
+def scan_common_vulnerabilities(url: str) -> list:
+    if not url.startswith('http'):
+        url = f'https://{url}'
 
-    if response is None:
-        return {
-            "url": url,
-            "error": "Could not fetch target site",
-            "security_headers": {
-                "present_headers": [],
-                "missing_headers": [],
-                "header_score": 0,
-            },
-        }
+    findings = []
+
+    sensitive_paths = [
+        ('/.env', 'Environment file exposed', 'critical'),
+        ('/.git/config', 'Git repository exposed', 'critical'),
+        ('/wp-admin/', 'WordPress admin panel', 'medium'),
+        ('/admin/', 'Admin panel accessible', 'medium'),
+        ('/phpmyadmin/', 'phpMyAdmin exposed', 'high'),
+        ('/server-status', 'Apache status page', 'medium'),
+        ('/server-info', 'Apache info page', 'medium'),
+        ('/.htaccess', 'htaccess file accessible', 'high'),
+        ('/robots.txt', 'Robots.txt present', 'info'),
+        ('/sitemap.xml', 'Sitemap present', 'info'),
+        ('/.well-known/security.txt', 'Security.txt present', 'info'),
+        ('/wp-login.php', 'WordPress login', 'medium'),
+        ('/backup/', 'Backup directory', 'high'),
+        ('/config.php', 'Config file exposed', 'critical'),
+        ('/database/', 'Database directory', 'critical'),
+        ('/api/docs', 'API documentation exposed', 'low'),
+        ('/swagger/', 'Swagger UI exposed', 'low'),
+        ('/graphql', 'GraphQL endpoint', 'medium'),
+        ('/.DS_Store', 'macOS metadata file', 'low'),
+        ('/crossdomain.xml', 'Flash crossdomain policy', 'low'),
+    ]
+
+    for path, name, severity in sensitive_paths:
+        try:
+            test_url = urljoin(url, path)
+            resp = requests.get(test_url, timeout=4, verify=False, allow_redirects=False,
+                                headers={'User-Agent': 'CyberShield-VulnScanner/1.0'})
+
+            if resp.status_code == 200 and len(resp.text) > 0:
+                is_real = resp.status_code != 404 and 'not found' not in resp.text.lower()[:200]
+                if is_real:
+                    findings.append({
+                        'path': path,
+                        'name': name,
+                        'severity': severity,
+                        'status_code': resp.status_code,
+                        'content_length': len(resp.text),
+                        'accessible': True,
+                    })
+        except Exception:
+            pass
+
+    return findings
+
+
+def scan_cookie_security(url: str) -> list:
+    findings = []
+    try:
+        if not url.startswith('http'):
+            url = f'https://{url}'
+
+        resp = requests.get(url, timeout=8, verify=False, allow_redirects=True)
+
+        for cookie in resp.cookies:
+            issues = []
+
+            if not cookie.secure:
+                issues.append('Missing Secure flag (cookie sent over HTTP)')
+            if not cookie.has_nonstandard_attr('HttpOnly') and 'httponly' not in str(cookie).lower():
+                issues.append('Missing HttpOnly flag (accessible to JavaScript)')
+            if 'samesite' not in str(cookie).lower():
+                issues.append('Missing SameSite attribute (CSRF risk)')
+
+            if issues:
+                findings.append({
+                    'cookie_name': cookie.name,
+                    'domain': cookie.domain,
+                    'severity': 'medium',
+                    'issues': issues,
+                })
+    except Exception:
+        pass
+
+    return findings
+
+
+def full_vulnerability_scan(target: str) -> dict:
+    parsed = urlparse(target if target.startswith('http') else f'https://{target}')
+    domain = parsed.netloc or parsed.path.split('/')[0]
+    url = f'{parsed.scheme or "https"}://{domain}'
+
+    header_checks = scan_security_headers(url)
+    ssl_findings = scan_ssl_vulnerabilities(domain)
+    path_findings = scan_common_vulnerabilities(url)
+    cookie_findings = scan_cookie_security(url)
+
+    total_score = sum(c.get('score', 0) for c in header_checks)
+
+    severity_scores = {'critical': 25, 'high': 15, 'medium': 10, 'low': 5, 'info': 0}
+    for f in ssl_findings:
+        total_score += severity_scores.get(f.get('severity', 'info'), 0)
+    for f in path_findings:
+        if f.get('accessible') and f.get('severity') != 'info':
+            total_score += severity_scores.get(f.get('severity', 'info'), 0)
+    for f in cookie_findings:
+        total_score += 5
+
+    total_score = min(total_score, 100)
+    risk_level = 'Critical' if total_score >= 70 else 'High' if total_score >= 50 else 'Medium' if total_score >= 25 else 'Low'
+
+    critical_count = sum(1 for f in ssl_findings + path_findings if f.get('severity') == 'critical')
+    high_count = sum(1 for f in ssl_findings + path_findings + header_checks if f.get('severity') == 'high' and not f.get('present', True))
+    medium_count = sum(1 for f in ssl_findings + path_findings + header_checks + cookie_findings if f.get('severity') == 'medium')
 
     return {
-        "url": final_url,
-        "security_headers": analyze_security_headers(dict(response.headers)),
-    }
-
-
-def full_vulnerability_scan(url: str) -> dict:
-    response, final_url = fetch_best_response(url)
-    host = extract_host(url)
-
-    if response is None:
-        return {
-            "url": url,
-            "domain": host,
-            "error": "Could not fetch target site",
-            "combined_score": 0,
-            "risk_level": "Unknown",
-            "total_findings": 0,
-            "security_headers": {
-                "present_headers": [],
-                "missing_headers": [],
-                "header_score": 0,
-            },
-            "exposed_paths": {
-                "paths_checked": 0,
-                "paths_found": 0,
-                "found": [],
-                "exposure_score": 0,
-            },
-            "ssl_analysis": {
-                "has_ssl": False,
-                "error": "Connection failed",
-                "ssl_score": 0,
-                "findings": [],
-            },
-        }
-
-    headers_result = analyze_security_headers(dict(response.headers))
-    paths_result = scan_sensitive_paths(final_url)
-    ssl_result = analyze_ssl_tls(host)
-
-    combined_score = (
-        headers_result.get("header_score", 0)
-        + paths_result.get("exposure_score", 0)
-        + ssl_result.get("ssl_score", 0)
-    )
-
-    total_findings = (
-        len(headers_result.get("missing_headers", []))
-        + len(paths_result.get("found", []))
-        + len([f for f in ssl_result.get("findings", []) if f.get("severity") != "good"])
-    )
-
-    risk_level = (
-        "High" if combined_score >= 40
-        else "Medium" if combined_score >= 20
-        else "Low"
-    )
-
-    return {
-        "url": final_url,
-        "domain": host,
-        "combined_score": combined_score,
-        "risk_level": risk_level,
-        "total_findings": total_findings,
-        "security_headers": headers_result,
-        "exposed_paths": paths_result,
-        "ssl_analysis": ssl_result,
+        'target': url,
+        'domain': domain,
+        'scan_time': datetime.utcnow().isoformat(),
+        'header_checks': header_checks,
+        'ssl_findings': ssl_findings,
+        'path_findings': path_findings,
+        'cookie_findings': cookie_findings,
+        'risk_score': total_score,
+        'risk_level': risk_level,
+        'summary': {
+            'critical': critical_count,
+            'high': high_count,
+            'medium': medium_count,
+            'total_findings': critical_count + high_count + medium_count,
+            'headers_missing': sum(1 for c in header_checks if not c.get('present') and c.get('key') in ['strict-transport-security', 'content-security-policy', 'x-content-type-options', 'x-frame-options', 'x-xss-protection', 'referrer-policy', 'permissions-policy']),
+            'paths_exposed': sum(1 for p in path_findings if p.get('accessible') and p.get('severity') != 'info'),
+            'cookie_issues': len(cookie_findings),
+            'ssl_issues': sum(1 for s in ssl_findings if s.get('severity') in ['critical', 'high']),
+        },
     }
